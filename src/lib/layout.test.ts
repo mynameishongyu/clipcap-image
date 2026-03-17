@@ -50,6 +50,29 @@ describe('buildDiagramLayout', () => {
     expect(layout.layers[0].children[0].kind).toBe('group');
   });
 
+  it('lets a single top-level node expand to the full available width', () => {
+    const diagram: Diagram = {
+      name: '单节点铺满',
+      layers: [
+        {
+          title: '接入层',
+          nodes: ['Web 管理后台'],
+        },
+      ],
+    };
+
+    const layout = buildDiagramLayout(diagram);
+    const layer = layout.layers[0];
+    const child = layer.children[0];
+
+    expect(child.kind).toBe('leaf');
+    if (child.kind === 'leaf') {
+      expect(child.frame.x).toBe(layer.frame.x + 24);
+      expect(child.frame.width).toBe(layer.frame.width - 48);
+      expect(child.frame.width).toBeGreaterThan(480);
+    }
+  });
+
   it('keeps dataset groups on a single row', () => {
     const diagram: Diagram = {
       name: '多子集布局',

@@ -471,13 +471,16 @@ function createGroupLayout(group: LayerGroup, width: number): GroupLayout {
     width -
     GROUP_PADDING_X * 2 -
     Math.max(0, (group.nodes.length - 1) * GROUP_MIN_GAP);
-  const childWidth = Math.max(
-    GROUP_LEAF_FIT_MIN_WIDTH,
-    Math.min(
-      GROUP_LEAF_STYLE.maxWidth,
-      Math.floor(availableChildrenWidth / Math.max(1, group.nodes.length)),
-    ),
-  );
+  const childWidth =
+    group.nodes.length === 1
+      ? Math.max(GROUP_LEAF_FIT_MIN_WIDTH, Math.floor(availableChildrenWidth))
+      : Math.max(
+          GROUP_LEAF_FIT_MIN_WIDTH,
+          Math.min(
+            GROUP_LEAF_STYLE.maxWidth,
+            Math.floor(availableChildrenWidth / Math.max(1, group.nodes.length)),
+          ),
+        );
   const leafLayouts = group.nodes.map((childTitle) =>
     createLeafLayout(childTitle, GROUP_LEAF_STYLE, childWidth),
   );
@@ -589,10 +592,12 @@ function createLayerLayout(layer: Layer, y: number, diagramWidth: number): Layer
       createLeafLayout(
         node,
         TOP_LEAF_STYLE,
-        Math.max(
-          TOP_LEAF_FIT_MIN_WIDTH,
-          Math.min(TOP_LEAF_STYLE.maxWidth, itemWidths[index]),
-        ),
+        layerNodes.length === 1
+          ? Math.max(TOP_LEAF_FIT_MIN_WIDTH, itemWidths[index])
+          : Math.max(
+              TOP_LEAF_FIT_MIN_WIDTH,
+              Math.min(TOP_LEAF_STYLE.maxWidth, itemWidths[index]),
+            ),
       ),
     );
     const placement = placeSingleRow(
