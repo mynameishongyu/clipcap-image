@@ -2,6 +2,23 @@ import type { Diagram } from './types';
 
 const exampleDiagrams: Diagram[] = [
   {
+    name: '测试环境部署样例',
+    layers: [
+      {
+        title: '入口层',
+        nodes: ['CDN 加速节点'],
+      },
+      {
+        title: '应用层',
+        nodes: ['前端静态站点', '后端应用服务'],        
+      },
+      {
+        title: '支撑层',        
+        nodes: ['前端静态站点', '后端应用服务', '关系型数据库', '缓存服务', '对象存储'],        
+      },
+    ],
+  },
+  {
     name: '通用业务平台架构图',
     layers: [
       {
@@ -44,29 +61,7 @@ const exampleDiagrams: Diagram[] = [
         ],
       },
     ],
-  },
-  {
-    name: '测试环境部署样例',
-    layers: [
-      {
-        title: '入口层',
-        nodes: ['CDN 加速节点', '负载均衡器'],
-      },
-      {
-        title: '应用层',
-        nodes: ['前端静态站点', '后端应用服务'],        
-      },
-      {
-        title: '支撑层',        
-        children: [
-          {
-            title: '数据服务',
-            nodes: ['主数据库', '缓存实例'],
-          },
-        ],
-      },
-    ],
-  },
+  },  
 ];
 
 export const EXAMPLE_SOURCE = JSON.stringify(exampleDiagrams, null, 2);
