@@ -237,30 +237,6 @@ export default function App() {
             </div>
           </div>
 
-          <label className="editor">
-            <span className="sr-only">JSON 输入</span>
-            <textarea
-              aria-label="JSON 输入"
-              className="editor__textarea"
-              onBlur={handleFormatSource}
-              onChange={(event) => handleSourceChange(event.target.value)}
-              spellCheck={false}
-              value={source}
-            />
-          </label>
-
-          {copyPromptFeedback ? (
-            <div
-              aria-live="polite"
-              className={`message ${
-                copyPromptFeedback.startsWith('复制失败') ? 'message--error' : 'message--success'
-              }`}
-              role="status"
-            >
-              {copyPromptFeedback}
-            </div>
-          ) : null}
-
           {issues.length > 0 ? (
             <div className="message message--error" role="alert">
               <strong>输入校验失败</strong>
@@ -275,6 +251,30 @@ export default function App() {
               `name` 会直接用于预览标题和下载文件名；输入合法 JSON 后会自动格式化；子集结构只支持两层嵌套。
             </div>
           )}
+
+          {copyPromptFeedback ? (
+            <div
+              aria-live="polite"
+              className={`message ${
+                copyPromptFeedback.startsWith('复制失败') ? 'message--error' : 'message--success'
+              }`}
+              role="status"
+            >
+              {copyPromptFeedback}
+            </div>
+          ) : null}
+
+          <label className="editor">
+            <span className="sr-only">JSON 输入</span>
+            <textarea
+              aria-label="JSON 输入"
+              className="editor__textarea"
+              onBlur={handleFormatSource}
+              onChange={(event) => handleSourceChange(event.target.value)}
+              spellCheck={false}
+              value={source}
+            />
+          </label>
         </section>
 
         <section className="panel panel--preview">

@@ -19,6 +19,40 @@ export class SchemaValidationError extends Error {
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+function getLineAndColumn(source: string, position: number): { line: number; column: number } {
+  const safePosition = Math.max(0, Math.min(position, source.length));
+  let line = 1;
+  let column = 1;
+
+  for (let index = 0; index < safePosition; index += 1) {
+    if (source[index] === '\n') {
+      line += 1;
+      column = 1;
+      continue;
+    }
+
+    column += 1;
+  }
+
+  return { line, column };
+}
+
+function getJsonParseLocation(source: string, message: string): string | null {
+  const lineColumnMatch = message.match(/line\s+(\d+)\s+column\s+(\d+)/i);
+  if (lineColumnMatch) {
+    const [, line, column] = lineColumnMatch;
+    return `第${line}行第${column}列`;
+  }
+
+  const positionMatch = message.match(/position\s+(\d+)/i);
+  if (!positionMatch) {
+    return null;
+  }
+
+  const { line, column } = getLineAndColumn(source, Number(positionMatch[1]));
+  return `第${line}行第${column}列`;
+}
+
 function createPath(diagramIndex: number, segments: string[]): string {
   return [`第${diagramIndex + 1}张图`, ...segments].join(' / ');
 }
@@ -243,9 +277,10 @@ export function parseDiagrams(source: string): Diagram[] {
     parsedValue = JSON.parse(source);
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
+    const location = getJsonParseLocation(source, message);
     throw new SchemaValidationError([
       {
-        path: 'JSON',
+        path: location ? `JSON / ${location}` : 'JSON',
         message: `解析失败: ${message}`,
       },
     ]);

@@ -45,6 +45,21 @@ describe('App', () => {
     });
   });
 
+  it('shows line information when generate preview fails because of invalid JSON', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText('JSON 输入'), {
+      target: {
+        value: '[\n  {\n    "name": "示例图",\n  }\n]',
+      },
+    });
+
+    await user.click(screen.getByRole('button', { name: '生成预览' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('第4行第3列');
+  });
+
   it('downloads only selected diagrams when clicking 下载已选', async () => {
     const user = userEvent.setup();
     render(<App />);

@@ -53,9 +53,22 @@ describe('parseDiagrams', () => {
       parseDiagrams('[{');
     } catch (error) {
       const validationError = error as SchemaValidationError;
-      expect(validationError.issues[0].path).toBe('JSON');
+      expect(validationError.issues[0].path).toContain('JSON');
       expect(formatSchemaIssue(validationError.issues[0])).toContain('解析失败');
     }
+  });
+
+  it('reports line and column for multiline JSON parse failures', () => {
+    try {
+      parseDiagrams('[\n  {\n    "name": "示例图",\n  }\n]');
+    } catch (error) {
+      const validationError = error as SchemaValidationError;
+      expect(validationError.issues[0].path).toContain('第4行第3列');
+      expect(formatSchemaIssue(validationError.issues[0])).toContain('解析失败');
+      return;
+    }
+
+    throw new Error('expected parseDiagrams to throw');
   });
 
   it('rejects nested objects inside a group and empty leaf nodes', () => {
