@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
+import { MODEL_OUTPUT_PROMPT } from './lib/example';
 
 const { downloadDiagramPngMock, downloadManyPngMock } = vi.hoisted(() => ({
   downloadDiagramPngMock: vi.fn().mockResolvedValue(undefined),
@@ -18,6 +19,20 @@ vi.mock('./lib/export', async () => {
 });
 
 describe('App', () => {
+  it('auto formats valid JSON input after a short delay', async () => {
+    render(<App />);
+
+    const textarea = screen.getByLabelText('JSON 输入');
+    const minifiedSource =
+      '[{"name":"示例图","layers":[{"title":"接入层","children":["Web 端",{"title":"接口组","children":["OpenAPI","Webhook"]}]}]}]';
+
+    fireEvent.change(textarea, { target: { value: minifiedSource } });
+
+    await waitFor(() => {
+      expect(textarea).toHaveValue(JSON.stringify(JSON.parse(minifiedSource), null, 2));
+    });
+  });
+
   it('generates previews with all items unselected by default', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -35,13 +50,13 @@ describe('App', () => {
     render(<App />);
 
     await user.click(screen.getByRole('button', { name: '生成预览' }));
-    await user.click(screen.getByLabelText('心理健康科研架构图 选择框'));
+    await user.click(screen.getByLabelText('通用业务平台架构图 选择框'));
     await user.click(screen.getByRole('button', { name: '下载已选' }));
 
     expect(downloadManyPngMock).toHaveBeenCalledTimes(1);
     expect(downloadManyPngMock).toHaveBeenCalledWith([
       expect.objectContaining({
-        filename: '心理健康科研架构图',
+        filename: '通用业务平台架构图',
       }),
     ]);
   });
@@ -55,5 +70,25 @@ describe('App', () => {
 
     expect(downloadManyPngMock).toHaveBeenCalledTimes(1);
     expect(downloadManyPngMock.mock.calls[0][0]).toHaveLength(2);
+  });
+
+  it('copies prompt requirements to clipboard', async () => {
+    const user = userEvent.setup();
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: writeTextMock,
+      },
+    });
+
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: '复制提示词要求' }));
+
+    expect(writeTextMock).toHaveBeenCalledTimes(1);
+    expect(writeTextMock).toHaveBeenCalledWith(MODEL_OUTPUT_PROMPT);
+    expect(screen.getByRole('status')).toHaveTextContent('提示词要求已复制到剪贴板');
   });
 });

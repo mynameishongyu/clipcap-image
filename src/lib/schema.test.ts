@@ -12,7 +12,7 @@ describe('parseDiagrams', () => {
 
     expect(diagrams).toHaveLength(2);
     expect(diagrams[0].layers[2].children[0]).toMatchObject({
-      title: '心理识别与辅助诊断数据集',
+      title: '数据存储',
     });
   });
 

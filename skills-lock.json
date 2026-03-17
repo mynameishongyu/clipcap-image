@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "bolder": {
+      "source": "pbakaus/impeccable",
+      "sourceType": "github",
+      "computedHash": "0accf49d7bbda166a682b68bd9f597982ba5d5b286d77b98356c90221186775d"
+    }
+  }
+}

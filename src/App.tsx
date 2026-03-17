@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DiagramCard } from './components/DiagramCard';
-import { EXAMPLE_SOURCE } from './lib/example';
+import { EXAMPLE_SOURCE, MODEL_OUTPUT_PROMPT } from './lib/example';
 import { buildSvgMarkup, downloadDiagramPng, downloadManyPng } from './lib/export';
 import { buildDiagramLayout } from './lib/layout';
 import {
@@ -25,6 +25,18 @@ function getErrorMessage(error: unknown): string {
   return '发生了未知错误';
 }
 
+function formatJsonSource(value: string): string {
+  if (value.trim().length === 0) {
+    return '';
+  }
+
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
 export default function App() {
   const [source, setSource] = useState(EXAMPLE_SOURCE);
   const [generatedDiagrams, setGeneratedDiagrams] = useState<GeneratedDiagram[]>([]);
@@ -32,14 +44,45 @@ export default function App() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [copyPromptFeedback, setCopyPromptFeedback] = useState<string | null>(null);
 
   const hasSelection = selectedIds.length > 0;
   const hasGenerated = generatedDiagrams.length > 0;
   const allSelected = hasGenerated && selectedIds.length === generatedDiagrams.length;
 
+  useEffect(() => {
+    const formatted = formatJsonSource(source);
+    if (formatted === source) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setSource((current) => {
+        const nextFormatted = formatJsonSource(current);
+        return nextFormatted === current ? current : nextFormatted;
+      });
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [source]);
+
+  function handleSourceChange(nextSource: string): void {
+    setSource(nextSource);
+    setCopyPromptFeedback(null);
+  }
+
+  function handleFormatSource(): string {
+    const formatted = formatJsonSource(source);
+    if (formatted !== source) {
+      setSource(formatted);
+    }
+
+    return formatted;
+  }
+
   function handleGenerate(): void {
     try {
-      const diagrams = parseDiagrams(source);
+      const diagrams = parseDiagrams(handleFormatSource());
       const nextGenerated = diagrams.map((diagram, index) => {
         const layout = buildDiagramLayout(diagram);
         return {
@@ -72,6 +115,7 @@ export default function App() {
     setSource(EXAMPLE_SOURCE);
     setIssues([]);
     setDownloadError(null);
+    setCopyPromptFeedback(null);
   }
 
   function handleClear(): void {
@@ -80,6 +124,7 @@ export default function App() {
     setSelectedIds([]);
     setIssues([]);
     setDownloadError(null);
+    setCopyPromptFeedback(null);
   }
 
   function handleToggleSelection(id: string): void {
@@ -149,6 +194,15 @@ export default function App() {
     }
   }
 
+  async function handleCopyPrompt(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(MODEL_OUTPUT_PROMPT);
+      setCopyPromptFeedback('提示词要求已复制到剪贴板');
+    } catch (error) {
+      setCopyPromptFeedback(`复制失败: ${getErrorMessage(error)}`);
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="hero">
@@ -171,6 +225,9 @@ export default function App() {
               <button className="button button--secondary" onClick={handleFillExample} type="button">
                 示例填充
               </button>
+              <button className="button button--secondary" onClick={() => void handleCopyPrompt()} type="button">
+                复制提示词要求
+              </button>
               <button className="button button--primary" onClick={handleGenerate} type="button">
                 生成预览
               </button>
@@ -185,11 +242,24 @@ export default function App() {
             <textarea
               aria-label="JSON 输入"
               className="editor__textarea"
-              onChange={(event) => setSource(event.target.value)}
+              onBlur={handleFormatSource}
+              onChange={(event) => handleSourceChange(event.target.value)}
               spellCheck={false}
               value={source}
             />
           </label>
+
+          {copyPromptFeedback ? (
+            <div
+              aria-live="polite"
+              className={`message ${
+                copyPromptFeedback.startsWith('复制失败') ? 'message--error' : 'message--success'
+              }`}
+              role="status"
+            >
+              {copyPromptFeedback}
+            </div>
+          ) : null}
 
           {issues.length > 0 ? (
             <div className="message message--error" role="alert">
@@ -202,7 +272,7 @@ export default function App() {
             </div>
           ) : (
             <div className="message message--hint">
-              `name` 会直接用于预览标题和下载文件名；子集结构只支持两层嵌套。
+              `name` 会直接用于预览标题和下载文件名；输入合法 JSON 后会自动格式化；子集结构只支持两层嵌套。
             </div>
           )}
         </section>

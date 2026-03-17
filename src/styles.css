@@ -222,6 +222,12 @@ button {
   color: #4b5f8e;
 }
 
+.message--success {
+  border: 1px solid #b8dfc5;
+  background: #effbf3;
+  color: #226943;
+}
+
 .selection-summary {
   display: flex;
   justify-content: space-between;
