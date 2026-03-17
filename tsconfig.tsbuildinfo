@@ -1,0 +1,1 @@
+{"root":["./src/app.test.tsx","./src/app.tsx","./src/main.tsx","./src/components/diagramcard.tsx","./src/lib/example.ts","./src/lib/export.ts","./src/lib/filename.test.ts","./src/lib/filename.ts","./src/lib/layout.test.ts","./src/lib/layout.ts","./src/lib/schema.test.ts","./src/lib/schema.ts","./src/lib/types.ts"],"version":"5.9.3"}
