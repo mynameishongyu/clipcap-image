@@ -90,6 +90,37 @@ function readNonEmptyString(
   return trimmed;
 }
 
+function parseNodes(
+  value: unknown,
+  issues: SchemaIssue[],
+  diagramIndex: number,
+  segments: string[],
+): string[] | null {
+  if (!Array.isArray(value)) {
+    addIssue(issues, diagramIndex, segments, '必须是数组');
+    return null;
+  }
+
+  const nodes: string[] = [];
+  value.forEach((node, nodeIndex) => {
+    const nodePath = [...segments, `[${nodeIndex}]`];
+    if (typeof node !== 'string') {
+      addIssue(issues, diagramIndex, nodePath, '节点必须是字符串');
+      return;
+    }
+
+    const trimmed = node.trim();
+    if (trimmed.length === 0) {
+      addIssue(issues, diagramIndex, nodePath, '节点不能为空字符串');
+      return;
+    }
+
+    nodes.push(trimmed);
+  });
+
+  return nodes;
+}
+
 function parseLayerGroup(
   value: unknown,
   issues: SchemaIssue[],
@@ -100,7 +131,7 @@ function parseLayerGroup(
   const baseSegments = [`第${layerIndex + 1}层`, `children[${childIndex}]`];
 
   if (!isPlainObject(value)) {
-    addIssue(issues, diagramIndex, baseSegments, '子集必须是包含 title 和 children 的对象');
+    addIssue(issues, diagramIndex, baseSegments, '子集必须是包含 title 和 nodes 的对象');
     return null;
   }
 
@@ -112,49 +143,19 @@ function parseLayerGroup(
     '不能为空字符串',
   );
 
-  if (!Array.isArray(value.children)) {
-    addIssue(issues, diagramIndex, [...baseSegments, 'children'], '必须是数组');
+  const nodes = parseNodes(value.nodes, issues, diagramIndex, [...baseSegments, 'nodes']);
+
+  if (!title || !nodes) {
     return null;
   }
 
-  if (value.children.length === 0) {
-    addIssue(issues, diagramIndex, [...baseSegments, 'children'], '不能为空数组');
-  }
-
-  const children: string[] = [];
-  value.children.forEach((child, nestedIndex) => {
-    const childPath = [...baseSegments, `children[${nestedIndex}]`];
-    if (typeof child === 'string') {
-      const trimmed = child.trim();
-      if (trimmed.length === 0) {
-        addIssue(issues, diagramIndex, childPath, '叶子节点不能为空字符串');
-        return;
-      }
-
-      children.push(trimmed);
-      return;
-    }
-
-    if (isPlainObject(child)) {
-      addIssue(
-        issues,
-        diagramIndex,
-        childPath,
-        '仅支持两层嵌套，子集 children 不能继续包含对象',
-      );
-      return;
-    }
-
-    addIssue(issues, diagramIndex, childPath, '叶子节点必须是字符串');
-  });
-
-  if (!title) {
-    return null;
+  if (nodes.length === 0) {
+    addIssue(issues, diagramIndex, [...baseSegments, 'nodes'], '不能为空数组');
   }
 
   return {
     title,
-    children,
+    nodes,
   };
 }
 
@@ -167,7 +168,12 @@ function parseLayer(
   const baseSegments = [`第${layerIndex + 1}层`];
 
   if (!isPlainObject(value)) {
-    addIssue(issues, diagramIndex, baseSegments, '每一层都必须是包含 title 和 children 的对象');
+    addIssue(
+      issues,
+      diagramIndex,
+      baseSegments,
+      '每一层都必须是包含 title，并且二选一提供 nodes 或 children 的对象',
+    );
     return null;
   }
 
@@ -179,47 +185,61 @@ function parseLayer(
     '不能为空字符串',
   );
 
-  if (!Array.isArray(value.children)) {
-    addIssue(issues, diagramIndex, [...baseSegments, 'children'], '必须是数组');
-    return null;
+  const hasNodes = value.nodes !== undefined;
+  const hasChildren = value.children !== undefined;
+
+  let nodes: string[] = [];
+  if (hasNodes) {
+    const parsedNodes = parseNodes(value.nodes, issues, diagramIndex, [...baseSegments, 'nodes']);
+    if (!parsedNodes) {
+      return null;
+    }
+
+    nodes = parsedNodes;
   }
 
-  if (value.children.length === 0) {
-    addIssue(issues, diagramIndex, [...baseSegments, 'children'], '不能为空数组');
-  }
+  let children: LayerGroup[] = [];
+  if (hasChildren) {
+    if (!Array.isArray(value.children)) {
+      addIssue(issues, diagramIndex, [...baseSegments, 'children'], '必须是数组');
+      return null;
+    }
 
-  const children: Array<string | LayerGroup> = [];
-  value.children.forEach((child, childIndex) => {
-    const childPath = [...baseSegments, `children[${childIndex}]`];
-
-    if (typeof child === 'string') {
-      const trimmed = child.trim();
-      if (trimmed.length === 0) {
-        addIssue(issues, diagramIndex, childPath, '叶子节点不能为空字符串');
-        return;
+    children = value.children.flatMap((child, childIndex) => {
+      const childPath = [...baseSegments, `children[${childIndex}]`];
+      if (!isPlainObject(child)) {
+        addIssue(issues, diagramIndex, childPath, 'children 只能包含子集对象');
+        return [];
       }
 
-      children.push(trimmed);
-      return;
-    }
-
-    const group = parseLayerGroup(child, issues, diagramIndex, layerIndex, childIndex);
-    if (group) {
-      children.push(group);
-      return;
-    }
-
-    if (!isPlainObject(child)) {
-      addIssue(issues, diagramIndex, childPath, 'children 只能包含字符串或子集对象');
-    }
-  });
+      const group = parseLayerGroup(child, issues, diagramIndex, layerIndex, childIndex);
+      return group ? [group] : [];
+    });
+  }
 
   if (!title) {
     return null;
   }
 
+  if (hasNodes && hasChildren) {
+    addIssue(issues, diagramIndex, baseSegments, 'nodes 和 children 只能二选一，不能同时存在');
+  }
+
+  if (!hasNodes && !hasChildren) {
+    addIssue(issues, diagramIndex, baseSegments, '每一层必须提供 nodes 或 children 其中一个');
+  }
+
+  if (hasNodes && nodes.length === 0) {
+    addIssue(issues, diagramIndex, [...baseSegments, 'nodes'], '不能为空数组');
+  }
+
+  if (hasChildren && children.length === 0) {
+    addIssue(issues, diagramIndex, [...baseSegments, 'children'], '不能为空数组');
+  }
+
   return {
     title,
+    nodes,
     children,
   };
 }

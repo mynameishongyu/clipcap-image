@@ -9,41 +9,70 @@ import {
 describe('parseDiagrams', () => {
   it('parses multiple diagrams from the example source', () => {
     const diagrams = parseDiagrams(EXAMPLE_SOURCE);
+    const firstDiagram = diagrams[0];
 
     expect(diagrams).toHaveLength(2);
-    expect(diagrams[0].layers[2].children[0]).toMatchObject({
+    expect(firstDiagram).toBeDefined();
+    expect(firstDiagram?.layers[2]?.children?.[0]).toMatchObject({
       title: '数据存储',
     });
+    expect(firstDiagram?.layers[0]?.nodes).toContain('Web 管理后台');
   });
 
-  it('accepts mixed string children and layer groups in the same layer', () => {
-    const diagrams = parseDiagrams(
-      JSON.stringify([
-        {
-          name: '混合层级',
-          layers: [
-            {
-              title: '综合层',
-              children: [
-                '模块A',
-                {
-                  title: '数据子集',
-                  children: ['条目1', '条目2'],
-                },
-              ],
-            },
-          ],
-        },
-      ]),
-    );
+  it('rejects nodes and children in the same layer', () => {
+    expect(() =>
+      parseDiagrams(
+        JSON.stringify([
+          {
+            name: '混合层级',
+            layers: [
+              {
+                title: '综合层',
+                nodes: ['模块A'],
+                children: [
+                  {
+                    title: '数据子集',
+                    nodes: ['条目1', '条目2'],
+                  },
+                ],
+              },
+            ],
+          },
+        ]),
+      ),
+    ).toThrowError(SchemaValidationError);
 
-    expect(diagrams[0].layers[0].children).toEqual([
-      '模块A',
-      {
-        title: '数据子集',
-        children: ['条目1', '条目2'],
-      },
-    ]);
+    try {
+      parseDiagrams(
+        JSON.stringify([
+          {
+            name: '混合层级',
+            layers: [
+              {
+                title: '综合层',
+                nodes: ['模块A'],
+                children: [
+                  {
+                    title: '数据子集',
+                    nodes: ['条目1', '条目2'],
+                  },
+                ],
+              },
+            ],
+          },
+        ]),
+      );
+    } catch (error) {
+      const validationError = error as SchemaValidationError;
+      expect(validationError.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: expect.stringContaining('第1层'),
+            message: 'nodes 和 children 只能二选一，不能同时存在',
+          }),
+        ]),
+      );
+    }
   });
 
   it('reports JSON parse failures with a dedicated JSON path', () => {
@@ -71,7 +100,7 @@ describe('parseDiagrams', () => {
     throw new Error('expected parseDiagrams to throw');
   });
 
-  it('rejects nested objects inside a group and empty leaf nodes', () => {
+  it('rejects invalid group nodes and empty layer content', () => {
     expect(() =>
       parseDiagrams(
         JSON.stringify([
@@ -83,7 +112,7 @@ describe('parseDiagrams', () => {
                 children: [
                   {
                     title: '子集',
-                    children: [{ title: '再嵌套', children: ['非法'] }, ''],
+                    nodes: [{ title: '再嵌套', nodes: ['非法'] }, ''],
                   },
                 ],
               },
@@ -104,7 +133,7 @@ describe('parseDiagrams', () => {
                 children: [
                   {
                     title: '子集',
-                    children: [{ title: '再嵌套', children: ['非法'] }, ''],
+                    nodes: [{ title: '再嵌套', nodes: ['非法'] }, ''],
                   },
                 ],
               },
@@ -117,12 +146,16 @@ describe('parseDiagrams', () => {
       expect(validationError.issues).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            path: expect.stringContaining('children[0] / children[0]'),
-            message: '仅支持两层嵌套，子集 children 不能继续包含对象',
+            path: expect.stringContaining('children[0] / nodes / [0]'),
+            message: '节点必须是字符串',
           }),
           expect.objectContaining({
-            path: expect.stringContaining('children[0] / children[1]'),
-            message: '叶子节点不能为空字符串',
+            path: expect.stringContaining('children[0] / nodes / [1]'),
+            message: '节点不能为空字符串',
+          }),
+          expect.objectContaining({
+            path: expect.stringContaining('children[0] / nodes'),
+            message: '不能为空数组',
           }),
         ]),
       );

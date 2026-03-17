@@ -1,11 +1,12 @@
 export interface LayerGroup {
   title: string;
-  children: string[];
+  nodes: string[];
 }
 
 export interface Layer {
   title: string;
-  children: Array<string | LayerGroup>;
+  nodes?: string[];
+  children?: LayerGroup[];
 }
 
 export interface Diagram {

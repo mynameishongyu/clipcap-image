@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 import { DiagramCard } from './components/DiagramCard';
 import { EXAMPLE_SOURCE, MODEL_OUTPUT_PROMPT } from './lib/example';
 import { buildSvgMarkup, downloadDiagramPng, downloadManyPng } from './lib/export';
@@ -37,12 +37,19 @@ function formatJsonSource(value: string): string {
   }
 }
 
+function waitForNextTick(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
+
 export default function App() {
   const [source, setSource] = useState(EXAMPLE_SOURCE);
   const [generatedDiagrams, setGeneratedDiagrams] = useState<GeneratedDiagram[]>([]);
   const [issues, setIssues] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [copyPromptFeedback, setCopyPromptFeedback] = useState<string | null>(null);
 
@@ -80,24 +87,35 @@ export default function App() {
     return formatted;
   }
 
-  function handleGenerate(): void {
+  async function handleGenerate(): Promise<void> {
     try {
+      setIsGenerating(true);
       const diagrams = parseDiagrams(handleFormatSource());
-      const nextGenerated = diagrams.map((diagram, index) => {
+      const nextGenerated: GeneratedDiagram[] = [];
+
+      setGeneratedDiagrams([]);
+      setSelectedIds([]);
+      setIssues([]);
+      setDownloadError(null);
+
+      await waitForNextTick();
+
+      for (const [index, diagram] of diagrams.entries()) {
         const layout = buildDiagramLayout(diagram);
-        return {
+        nextGenerated.push({
           id: `diagram-${index}`,
           name: diagram.name,
           svgMarkup: buildSvgMarkup(layout),
           width: layout.width,
           height: layout.height,
-        };
-      });
+        });
 
-      setGeneratedDiagrams(nextGenerated);
-      setSelectedIds([]);
-      setIssues([]);
-      setDownloadError(null);
+        await waitForNextTick();
+      }
+
+      startTransition(() => {
+        setGeneratedDiagrams(nextGenerated);
+      });
     } catch (error) {
       setGeneratedDiagrams([]);
       setSelectedIds([]);
@@ -108,6 +126,8 @@ export default function App() {
       }
 
       setIssues([`生成失败: ${getErrorMessage(error)}`]);
+    } finally {
+      setIsGenerating(false);
     }
   }
 
@@ -218,7 +238,7 @@ export default function App() {
           <div className="panel__header">
             <div>
               <h2>JSON 输入</h2>
-              <p>输入顶层为 `Diagram[]` 的 JSON，生成后会保留固定配色和层级布局。</p>
+              <p>输入顶层为 `Diagram[]` 的 JSON，使用 `nodes` 表示节点，使用 `children` 表示分组层级，同一层只能二选一。</p>
             </div>
 
             <div className="button-row">
@@ -226,10 +246,15 @@ export default function App() {
                 示例填充
               </button>
               <button className="button button--secondary" onClick={() => void handleCopyPrompt()} type="button">
-                复制提示词要求
+                复制提示词
               </button>
-              <button className="button button--primary" onClick={handleGenerate} type="button">
-                生成预览
+              <button
+                className="button button--primary"
+                disabled={isGenerating}
+                onClick={() => void handleGenerate()}
+                type="button"
+              >
+                {isGenerating ? '生成中...' : '生成预览'}
               </button>
               <button className="button button--ghost" onClick={handleClear} type="button">
                 清空
@@ -248,7 +273,7 @@ export default function App() {
             </div>
           ) : (
             <div className="message message--hint">
-              `name` 会直接用于预览标题和下载文件名；输入合法 JSON 后会自动格式化；子集结构只支持两层嵌套。
+              `name` 会直接用于预览标题和下载文件名；输入合法 JSON 后会自动格式化；每层只能使用 `nodes` 或 `children` 其中一种；`children` 只支持一层分组嵌套。
             </div>
           )}
 

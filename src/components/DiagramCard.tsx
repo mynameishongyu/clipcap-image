@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+
 interface DiagramCardProps {
   title: string;
   svgMarkup: string;
@@ -17,6 +19,25 @@ export function DiagramCard({
   onToggle,
   onDownload,
 }: DiagramCardProps) {
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  useEffect(() => {
+    if (typeof URL.createObjectURL !== 'function') {
+      setPreviewUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`);
+      return undefined;
+    }
+
+    const svgBlob = new Blob([svgMarkup], {
+      type: 'image/svg+xml;charset=utf-8',
+    });
+    const nextPreviewUrl = URL.createObjectURL(svgBlob);
+    setPreviewUrl(nextPreviewUrl);
+
+    return () => {
+      URL.revokeObjectURL(nextPreviewUrl);
+    };
+  }, [svgMarkup]);
+
   return (
     <article className="diagram-card">
       <div className="diagram-card__header">
@@ -41,10 +62,17 @@ export function DiagramCard({
         </button>
       </div>
 
-      <div
-        className="diagram-card__preview"
-        dangerouslySetInnerHTML={{ __html: svgMarkup }}
-      />
+      <div className="diagram-card__preview">
+        {previewUrl ? (
+          <img
+            alt={`${title} 预览图`}
+            className="diagram-card__image"
+            decoding="async"
+            loading="lazy"
+            src={previewUrl}
+          />
+        ) : null}
+      </div>
 
       <div className="diagram-card__meta">{sizeLabel}</div>
     </article>

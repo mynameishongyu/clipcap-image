@@ -24,7 +24,7 @@ describe('App', () => {
 
     const textarea = screen.getByLabelText('JSON 输入');
     const minifiedSource =
-      '[{"name":"示例图","layers":[{"title":"接入层","children":["Web 端",{"title":"接口组","children":["OpenAPI","Webhook"]}]}]}]';
+      '[{"name":"示例图","layers":[{"title":"接入层","nodes":["Web 端"]},{"title":"接口层","children":[{"title":"接口组","nodes":["OpenAPI","Webhook"]}]}]}]';
 
     fireEvent.change(textarea, { target: { value: minifiedSource } });
 
@@ -39,7 +39,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '生成预览' }));
 
-    expect(screen.getByText('已生成 2 张架构图')).toBeInTheDocument();
+    expect(await screen.findByText('已生成 2 张架构图')).toBeInTheDocument();
     screen.getAllByRole('checkbox').forEach((checkbox) => {
       expect(checkbox).not.toBeChecked();
     });
@@ -65,6 +65,7 @@ describe('App', () => {
     render(<App />);
 
     await user.click(screen.getByRole('button', { name: '生成预览' }));
+    await screen.findByText('已生成 2 张架构图');
     await user.click(screen.getByLabelText('通用业务平台架构图 选择框'));
     await user.click(screen.getByRole('button', { name: '下载已选' }));
 
@@ -81,6 +82,7 @@ describe('App', () => {
     render(<App />);
 
     await user.click(screen.getByRole('button', { name: '生成预览' }));
+    await screen.findByText('已生成 2 张架构图');
     await user.click(screen.getByRole('button', { name: '下载全部' }));
 
     expect(downloadManyPngMock).toHaveBeenCalledTimes(1);

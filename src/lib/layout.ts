@@ -57,6 +57,10 @@ export interface DiagramLayout {
 
 interface LeafStyleConfig {
   width: number;
+  minWidth: number;
+  maxWidth: number;
+  maxLines: number;
+  truncateOverflow: boolean;
   minHeight: number;
   fontSize: number;
   lineHeight: number;
@@ -75,7 +79,8 @@ const COLORS = {
   textLight: '#FFFFFF',
 };
 
-const DIAGRAM_WIDTH = 1440;
+const MIN_DIAGRAM_WIDTH = 960;
+const MAX_DIAGRAM_WIDTH = 2400;
 const PAGE_PADDING_X = 32;
 const PAGE_PADDING_Y = 30;
 const LAYER_GAP = 48;
@@ -87,6 +92,10 @@ const LAYER_TITLE_LINE_HEIGHT = 42;
 const LAYER_TITLE_GAP = 28;
 const TOP_LEAF_STYLE: LeafStyleConfig = {
   width: 240,
+  minWidth: 140,
+  maxWidth: 480,
+  maxLines: 2,
+  truncateOverflow: false,
   minHeight: 102,
   fontSize: 20,
   lineHeight: 30,
@@ -96,6 +105,10 @@ const TOP_LEAF_STYLE: LeafStyleConfig = {
 };
 const MIXED_LEAF_STYLE: LeafStyleConfig = {
   width: 240,
+  minWidth: 140,
+  maxWidth: 480,
+  maxLines: 2,
+  truncateOverflow: false,
   minHeight: 102,
   fontSize: 20,
   lineHeight: 30,
@@ -105,6 +118,10 @@ const MIXED_LEAF_STYLE: LeafStyleConfig = {
 };
 const GROUP_LEAF_STYLE: LeafStyleConfig = {
   width: 156,
+  minWidth: 84,
+  maxWidth: 300,
+  maxLines: 2,
+  truncateOverflow: false,
   minHeight: 92,
   fontSize: 18,
   lineHeight: 28,
@@ -115,7 +132,8 @@ const GROUP_LEAF_STYLE: LeafStyleConfig = {
 const TOP_ROW_GAP = 28;
 const FLOW_ROW_GAP = 28;
 const FLOW_MIN_GAP = 24;
-const GROUP_MIN_WIDTH = 340;
+const GROUP_MIN_WIDTH = 180;
+const GROUP_BASE_MIN_WIDTH = 180;
 const GROUP_PADDING_X = 20;
 const GROUP_PADDING_TOP = 18;
 const GROUP_PADDING_BOTTOM = 20;
@@ -124,8 +142,9 @@ const GROUP_TITLE_LINE_HEIGHT = 30;
 const GROUP_TITLE_GAP = 16;
 const GROUP_ROW_GAP = 16;
 const GROUP_MIN_GAP = 16;
-const TOP_MAX_PER_ROW = 4;
-const GROUP_MAX_PER_ROW = 3;
+const TOP_LEAF_FIT_MIN_WIDTH = 120;
+const MIXED_LEAF_FIT_MIN_WIDTH = 120;
+const GROUP_LEAF_FIT_MIN_WIDTH = 64;
 
 function isWideCharacter(character: string): boolean {
   const codePoint = character.codePointAt(0) ?? 0;
@@ -159,7 +178,45 @@ export function estimateTextWidth(text: string, fontSize: number): number {
   );
 }
 
-export function wrapText(text: string, maxWidth: number, fontSize: number): string[] {
+function truncateLineToFit(text: string, maxWidth: number, fontSize: number): string {
+  if (estimateTextWidth(text, fontSize) <= maxWidth) {
+    return text;
+  }
+
+  const ellipsis = '...';
+  const ellipsisWidth = estimateTextWidth(ellipsis, fontSize);
+  let current = '';
+  let currentWidth = 0;
+
+  for (const character of Array.from(text)) {
+    const characterWidth = estimateCharacterWidth(character, fontSize);
+    if (current && currentWidth + characterWidth + ellipsisWidth > maxWidth) {
+      break;
+    }
+
+    current += character;
+    currentWidth += characterWidth;
+  }
+
+  return current.length > 0 ? `${current}${ellipsis}` : ellipsis;
+}
+
+function getLeafDesiredWidth(title: string, style: LeafStyleConfig): number {
+  const textWidth = estimateTextWidth(title, style.fontSize);
+  const estimatedLineWidth =
+    style.maxLines <= 1 ? textWidth : Math.ceil(textWidth / style.maxLines);
+  const desiredWidth = estimatedLineWidth + style.paddingX * 2 + 24;
+
+  return Math.max(style.minWidth, Math.min(style.maxWidth, Math.ceil(desiredWidth)));
+}
+
+export function wrapText(
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+  maxLines?: number,
+  truncateOverflow = true,
+): string[] {
   const normalized = text.replace(/\r\n/g, '\n').trim();
   const paragraphs = normalized.split('\n');
   const lines: string[] = [];
@@ -171,15 +228,19 @@ export function wrapText(text: string, maxWidth: number, fontSize: number): stri
     }
 
     let currentLine = '';
+    let currentLineWidth = 0;
+
     Array.from(paragraph).forEach((character) => {
-      const nextLine = `${currentLine}${character}`;
-      if (currentLine && estimateTextWidth(nextLine, fontSize) > maxWidth) {
+      const characterWidth = estimateCharacterWidth(character, fontSize);
+      if (currentLine && currentLineWidth + characterWidth > maxWidth) {
         lines.push(currentLine);
         currentLine = character;
+        currentLineWidth = characterWidth;
         return;
       }
 
-      currentLine = nextLine;
+      currentLine = `${currentLine}${character}`;
+      currentLineWidth += characterWidth;
     });
 
     if (currentLine) {
@@ -187,21 +248,38 @@ export function wrapText(text: string, maxWidth: number, fontSize: number): stri
     }
   });
 
-  return lines.length > 0 ? lines : [''];
+  const normalizedLines = lines.length > 0 ? lines : [''];
+  if (!maxLines || normalizedLines.length <= maxLines) {
+    return normalizedLines;
+  }
+
+  if (!truncateOverflow) {
+    return normalizedLines.slice(0, maxLines);
+  }
+
+  const limitedLines = normalizedLines.slice(0, maxLines);
+  const overflowText = normalizedLines.slice(maxLines - 1).join('');
+  limitedLines[maxLines - 1] = truncateLineToFit(overflowText, maxWidth, fontSize);
+  return limitedLines;
 }
 
-function createLeafLayout(title: string, style: LeafStyleConfig): LeafLayout {
-  const lines = wrapText(title, style.width - style.paddingX * 2, style.fontSize);
+function createLeafLayout(title: string, style: LeafStyleConfig, width = style.width): LeafLayout {
+  const lines = wrapText(
+    title,
+    width - style.paddingX * 2,
+    style.fontSize,
+    style.maxLines,
+    style.truncateOverflow,
+  );
   const textHeight = lines.length * style.lineHeight;
   const height = Math.max(style.minHeight, textHeight + style.paddingY * 2);
-  const verticalPadding = (height - textHeight) / 2;
 
   return {
     kind: 'leaf',
     frame: {
       x: 0,
       y: 0,
-      width: style.width,
+      width,
       height,
     },
     radius: style.radius,
@@ -210,9 +288,9 @@ function createLeafLayout(title: string, style: LeafStyleConfig): LeafLayout {
       lines,
       area: {
         x: style.paddingX,
-        y: verticalPadding,
-        width: style.width - style.paddingX * 2,
-        height: textHeight,
+        y: 0,
+        width: width - style.paddingX * 2,
+        height,
       },
       fontSize: style.fontSize,
       lineHeight: style.lineHeight,
@@ -267,126 +345,119 @@ function translateChildLayout(layout: LayerChildLayout, dx: number, dy: number):
     : translateGroupLayout(layout, dx, dy);
 }
 
-function placeUniformRows(
-  items: LeafLayout[],
-  xStart: number,
-  yStart: number,
-  containerWidth: number,
-  maxPerRow: number,
-  rowGap: number,
-  minGap: number,
-): { items: LeafLayout[]; height: number } {
-  const positionedItems: LeafLayout[] = [];
-  let currentY = yStart;
+function distributeWidths(
+  desiredWidths: number[],
+  minWidths: number[],
+  totalWidth: number,
+): number[] {
+  const widths = new Array(desiredWidths.length).fill(0);
+  let remainingIndices = desiredWidths.map((_, index) => index);
+  let remainingWidth = totalWidth;
 
-  for (let index = 0; index < items.length; index += maxPerRow) {
-    const rowItems = items.slice(index, index + maxPerRow);
-    const totalWidth = rowItems.reduce((sum, item) => sum + item.frame.width, 0);
-    const gap =
-      rowItems.length === 1
-        ? 0
-        : Math.max(minGap, (containerWidth - totalWidth) / (rowItems.length - 1));
-    const startX =
-      rowItems.length === 1
-        ? xStart + (containerWidth - rowItems[0].frame.width) / 2
-        : xStart;
-    let currentX = startX;
-    let rowHeight = 0;
+  while (remainingIndices.length > 0) {
+    const remainingDesiredTotal = remainingIndices.reduce(
+      (sum, index) => sum + desiredWidths[index],
+      0,
+    );
 
-    rowItems.forEach((item) => {
-      positionedItems.push(translateLeafLayout(item, currentX, currentY));
-      currentX += item.frame.width + gap;
-      rowHeight = Math.max(rowHeight, item.frame.height);
-    });
-
-    currentY += rowHeight + rowGap;
-  }
-
-  const height = positionedItems.length === 0 ? 0 : currentY - yStart - rowGap;
-  return {
-    items: positionedItems,
-    height,
-  };
-}
-
-function placeFlowRows(
-  items: LayerChildLayout[],
-  xStart: number,
-  yStart: number,
-  containerWidth: number,
-  rowGap: number,
-  minGap: number,
-): { items: LayerChildLayout[]; height: number } {
-  const rows: LayerChildLayout[][] = [];
-  let currentRow: LayerChildLayout[] = [];
-  let currentRowWidth = 0;
-
-  items.forEach((item) => {
-    const nextWidth =
-      currentRow.length === 0
-        ? item.frame.width
-        : currentRowWidth + minGap + item.frame.width;
-
-    if (nextWidth > containerWidth && currentRow.length > 0) {
-      rows.push(currentRow);
-      currentRow = [item];
-      currentRowWidth = item.frame.width;
-      return;
+    if (remainingDesiredTotal <= 0) {
+      const evenWidth = remainingWidth / remainingIndices.length;
+      remainingIndices.forEach((index) => {
+        widths[index] = Math.max(minWidths[index], evenWidth);
+      });
+      break;
     }
 
-    currentRow.push(item);
-    currentRowWidth = nextWidth;
-  });
+    const scale = remainingWidth / remainingDesiredTotal;
+    const fixedIndices: number[] = [];
 
-  if (currentRow.length > 0) {
-    rows.push(currentRow);
-  }
-
-  const positionedItems: LayerChildLayout[] = [];
-  let currentY = yStart;
-
-  rows.forEach((row) => {
-    const totalWidth = row.reduce((sum, item) => sum + item.frame.width, 0);
-    const rowHeight = row.reduce((height, item) => Math.max(height, item.frame.height), 0);
-    const gap =
-      row.length === 1
-        ? 0
-        : Math.max(minGap, (containerWidth - totalWidth) / (row.length - 1));
-    const startX =
-      row.length === 1 ? xStart + (containerWidth - totalWidth) / 2 : xStart;
-    let currentX = startX;
-
-    row.forEach((item) => {
-      positionedItems.push(translateChildLayout(item, currentX, currentY));
-      currentX += item.frame.width + gap;
+    remainingIndices.forEach((index) => {
+      const scaledWidth = desiredWidths[index] * scale;
+      if (scaledWidth <= minWidths[index]) {
+        widths[index] = minWidths[index];
+        remainingWidth -= minWidths[index];
+        fixedIndices.push(index);
+      }
     });
 
-    currentY += rowHeight + rowGap;
+    if (fixedIndices.length === 0) {
+      remainingIndices.forEach((index) => {
+        widths[index] = desiredWidths[index] * scale;
+      });
+      break;
+    }
+
+    remainingIndices = remainingIndices.filter((index) => !fixedIndices.includes(index));
+  }
+
+  const roundedWidths = widths.map((width) => Math.round(width));
+  let delta = totalWidth - roundedWidths.reduce((sum, width) => sum + width, 0);
+
+  while (delta !== 0 && roundedWidths.length > 0) {
+    let changed = false;
+
+    for (let index = 0; index < roundedWidths.length && delta !== 0; index += 1) {
+      if (delta > 0) {
+        roundedWidths[index] += 1;
+        delta -= 1;
+        changed = true;
+        continue;
+      }
+
+      if (roundedWidths[index] - 1 >= Math.round(minWidths[index])) {
+        roundedWidths[index] -= 1;
+        delta += 1;
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      break;
+    }
+  }
+
+  return roundedWidths;
+}
+
+function placeSingleRow<T extends LayerChildLayout>(
+  items: T[],
+  xStart: number,
+  yStart: number,
+  containerWidth: number,
+  minGap: number,
+): { items: T[]; height: number } {
+  if (items.length === 0) {
+    return { items: [], height: 0 };
+  }
+
+  const totalWidth = items.reduce((sum, item) => sum + item.frame.width, 0);
+  const rowHeight = items.reduce((height, item) => Math.max(height, item.frame.height), 0);
+  const gap =
+    items.length === 1
+      ? 0
+      : Math.max(0, (containerWidth - totalWidth) / (items.length - 1));
+  const startX =
+    items.length === 1 ? xStart + (containerWidth - totalWidth) / 2 : xStart;
+  const positionedItems: T[] = [];
+  let currentX = startX;
+
+  items.forEach((item) => {
+    positionedItems.push(translateChildLayout(item, currentX, yStart) as T);
+    currentX += item.frame.width + gap;
   });
 
-  const height = rows.length === 0 ? 0 : currentY - yStart - rowGap;
   return {
     items: positionedItems,
-    height,
+    height: rowHeight,
   };
 }
 
-function createGroupLayout(group: LayerGroup, maxWidth: number): GroupLayout {
-  const preferredColumns = Math.min(GROUP_MAX_PER_ROW, group.children.length);
-  const contentWidthByChildren =
-    preferredColumns * GROUP_LEAF_STYLE.width +
-    (preferredColumns - 1) * GROUP_MIN_GAP +
-    GROUP_PADDING_X * 2;
-  const widthByTitle =
-    estimateTextWidth(group.title, GROUP_TITLE_FONT_SIZE) + GROUP_PADDING_X * 2 + 20;
-  const width = Math.min(
-    maxWidth,
-    Math.max(GROUP_MIN_WIDTH, contentWidthByChildren, widthByTitle),
-  );
+function createGroupLayout(group: LayerGroup, width: number): GroupLayout {
   const titleLines = wrapText(
     group.title,
     width - GROUP_PADDING_X * 2,
     GROUP_TITLE_FONT_SIZE,
+    1,
   );
   const titleHeight = titleLines.length * GROUP_TITLE_LINE_HEIGHT;
   const titleArea = {
@@ -395,17 +466,26 @@ function createGroupLayout(group: LayerGroup, maxWidth: number): GroupLayout {
     width: width - GROUP_PADDING_X * 2,
     height: titleHeight,
   };
-  const leafLayouts = group.children.map((childTitle) =>
-    createLeafLayout(childTitle, GROUP_LEAF_STYLE),
-  );
   const childrenOriginY = GROUP_PADDING_TOP + titleHeight + GROUP_TITLE_GAP;
-  const childrenPlacement = placeUniformRows(
+  const availableChildrenWidth =
+    width -
+    GROUP_PADDING_X * 2 -
+    Math.max(0, (group.nodes.length - 1) * GROUP_MIN_GAP);
+  const childWidth = Math.max(
+    GROUP_LEAF_FIT_MIN_WIDTH,
+    Math.min(
+      GROUP_LEAF_STYLE.maxWidth,
+      Math.floor(availableChildrenWidth / Math.max(1, group.nodes.length)),
+    ),
+  );
+  const leafLayouts = group.nodes.map((childTitle) =>
+    createLeafLayout(childTitle, GROUP_LEAF_STYLE, childWidth),
+  );
+  const childrenPlacement = placeSingleRow(
     leafLayouts,
     GROUP_PADDING_X,
     childrenOriginY,
     width - GROUP_PADDING_X * 2,
-    preferredColumns,
-    GROUP_ROW_GAP,
     GROUP_MIN_GAP,
   );
   const height = childrenOriginY + childrenPlacement.height + GROUP_PADDING_BOTTOM;
@@ -434,17 +514,53 @@ function createGroupLayout(group: LayerGroup, maxWidth: number): GroupLayout {
   };
 }
 
-function createLayerLayout(layer: Layer, y: number): LayerLayout {
+function getRequiredGroupWidth(group: LayerGroup): number {
+  const childrenWidth =
+    group.nodes.reduce(
+      (sum, child) => sum + getLeafDesiredWidth(child, GROUP_LEAF_STYLE),
+      0,
+    ) +
+    Math.max(0, (group.nodes.length - 1) * GROUP_MIN_GAP) +
+    GROUP_PADDING_X * 2;
+
+  const titleWidth =
+    estimateTextWidth(group.title, GROUP_TITLE_FONT_SIZE) + GROUP_PADDING_X * 2 + 20;
+
+  return Math.max(GROUP_MIN_WIDTH, GROUP_BASE_MIN_WIDTH, childrenWidth, titleWidth);
+}
+
+function getRequiredLayerWidth(layer: Layer): number {
+  const titleWidth = estimateTextWidth(layer.title, LAYER_TITLE_FONT_SIZE) + 160;
+  const layerNodes = layer.nodes ?? [];
+  const layerGroups = layer.children ?? [];
+  const containsGroups = layerGroups.length > 0;
+
+  const childrenWidth = !containsGroups
+    ? layerNodes.reduce(
+        (sum, child) => sum + getLeafDesiredWidth(child, TOP_LEAF_STYLE),
+        0,
+      ) + Math.max(0, (layerNodes.length - 1) * TOP_ROW_GAP)
+    : [
+        ...layerNodes.map((node) => getLeafDesiredWidth(node, MIXED_LEAF_STYLE)),
+        ...layerGroups.map((child) => getRequiredGroupWidth(child)),
+      ].reduce((sum, width) => sum + width, 0) +
+      Math.max(0, (layerNodes.length + layerGroups.length - 1) * FLOW_MIN_GAP);
+
+  return Math.max(titleWidth, childrenWidth) + LAYER_PADDING_X * 2 + PAGE_PADDING_X * 2;
+}
+
+function createLayerLayout(layer: Layer, y: number, diagramWidth: number): LayerLayout {
   const layerFrame: Rect = {
     x: PAGE_PADDING_X,
     y,
-    width: DIAGRAM_WIDTH - PAGE_PADDING_X * 2,
+    width: diagramWidth - PAGE_PADDING_X * 2,
     height: 0,
   };
   const titleLines = wrapText(
     layer.title,
     layerFrame.width - 220,
     LAYER_TITLE_FONT_SIZE,
+    1,
   );
   const titleHeight = titleLines.length * LAYER_TITLE_LINE_HEIGHT;
   const titleArea: Rect = {
@@ -456,38 +572,84 @@ function createLayerLayout(layer: Layer, y: number): LayerLayout {
   const childrenOriginY = y + LAYER_PADDING_TOP + titleHeight + LAYER_TITLE_GAP;
   const contentWidth = layerFrame.width - LAYER_PADDING_X * 2;
   const contentX = layerFrame.x + LAYER_PADDING_X;
-  const containsGroups = layer.children.some((child) => typeof child !== 'string');
+  const layerNodes = layer.nodes ?? [];
+  const layerGroups = layer.children ?? [];
+  const containsGroups = layerGroups.length > 0;
 
   let children: LayerChildLayout[] = [];
   let childrenHeight = 0;
 
   if (!containsGroups) {
-    const leafLayouts = layer.children.map((child) =>
-      createLeafLayout(child as string, TOP_LEAF_STYLE),
+    const totalGap = Math.max(0, (layerNodes.length - 1) * TOP_ROW_GAP);
+    const availableItemWidth = contentWidth - totalGap;
+    const desiredWidths = layerNodes.map((node) => getLeafDesiredWidth(node, TOP_LEAF_STYLE));
+    const minWidths = layerNodes.map(() => TOP_LEAF_FIT_MIN_WIDTH);
+    const itemWidths = distributeWidths(desiredWidths, minWidths, availableItemWidth);
+    const leafLayouts = layerNodes.map((node, index) =>
+      createLeafLayout(
+        node,
+        TOP_LEAF_STYLE,
+        Math.max(
+          TOP_LEAF_FIT_MIN_WIDTH,
+          Math.min(TOP_LEAF_STYLE.maxWidth, itemWidths[index]),
+        ),
+      ),
     );
-    const placement = placeUniformRows(
+    const placement = placeSingleRow(
       leafLayouts,
       contentX,
       childrenOriginY,
       contentWidth,
-      TOP_MAX_PER_ROW,
-      TOP_ROW_GAP,
       36,
     );
     children = placement.items;
     childrenHeight = placement.height;
   } else {
-    const mixedLayouts = layer.children.map((child) =>
-      typeof child === 'string'
-        ? createLeafLayout(child, MIXED_LEAF_STYLE)
-        : createGroupLayout(child, contentWidth),
+    const totalGap =
+      Math.max(0, (layerNodes.length + layerGroups.length - 1) * FLOW_MIN_GAP);
+    const availableItemWidth = contentWidth - totalGap;
+    const desiredWidths = [
+      ...layerNodes.map((node) => getLeafDesiredWidth(node, MIXED_LEAF_STYLE)),
+      ...layerGroups.map((child) => getRequiredGroupWidth(child)),
+    ];
+    const minWidths = [
+      ...layerNodes.map(() => MIXED_LEAF_FIT_MIN_WIDTH),
+      ...layerGroups.map((child) =>
+        Math.max(
+          GROUP_BASE_MIN_WIDTH,
+          estimateTextWidth(child.title, GROUP_TITLE_FONT_SIZE) + GROUP_PADDING_X * 2,
+          child.nodes.length * GROUP_LEAF_STYLE.minWidth +
+            Math.max(0, (child.nodes.length - 1) * GROUP_MIN_GAP) +
+            GROUP_PADDING_X * 2,
+        ),
+      ),
+    ];
+    const itemWidths = distributeWidths(desiredWidths, minWidths, availableItemWidth);
+    const nodeLayouts = layerNodes.map((node, index) =>
+      createLeafLayout(
+        node,
+        MIXED_LEAF_STYLE,
+        Math.max(
+          MIXED_LEAF_FIT_MIN_WIDTH,
+          Math.min(MIXED_LEAF_STYLE.maxWidth, itemWidths[index]),
+        ),
+      ),
     );
-    const placement = placeFlowRows(
+    const groupLayouts = layerGroups.map((child, index) =>
+      createGroupLayout(
+        child,
+        Math.max(
+          GROUP_LEAF_FIT_MIN_WIDTH * 2,
+          itemWidths[layerNodes.length + index],
+        ),
+      ),
+    );
+    const mixedLayouts = [...nodeLayouts, ...groupLayouts];
+    const placement = placeSingleRow(
       mixedLayouts,
       contentX,
       childrenOriginY,
       contentWidth,
-      FLOW_ROW_GAP,
       FLOW_MIN_GAP,
     );
     children = placement.items;
@@ -521,18 +683,23 @@ function createLayerLayout(layer: Layer, y: number): LayerLayout {
 }
 
 export function buildDiagramLayout(diagram: Diagram): DiagramLayout {
+  const requiredWidth = Math.max(
+    MIN_DIAGRAM_WIDTH,
+    ...diagram.layers.map((layer) => getRequiredLayerWidth(layer)),
+  );
+  const diagramWidth = Math.min(MAX_DIAGRAM_WIDTH, requiredWidth);
   let currentY = PAGE_PADDING_Y;
   const layers: LayerLayout[] = [];
 
   diagram.layers.forEach((layer) => {
-    const layerLayout = createLayerLayout(layer, currentY);
+    const layerLayout = createLayerLayout(layer, currentY, diagramWidth);
     layers.push(layerLayout);
     currentY += layerLayout.frame.height + LAYER_GAP;
   });
 
   return {
     name: diagram.name,
-    width: DIAGRAM_WIDTH,
+    width: diagramWidth,
     height: currentY - LAYER_GAP + PAGE_PADDING_Y,
     background: COLORS.background,
     layers,

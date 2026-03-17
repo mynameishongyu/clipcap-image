@@ -249,6 +249,8 @@ button {
 }
 
 .diagram-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 420px 560px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -289,7 +291,7 @@ button {
   max-height: 520px;
 }
 
-.diagram-card__preview svg {
+.diagram-card__image {
   display: block;
   width: 100%;
   height: auto;
